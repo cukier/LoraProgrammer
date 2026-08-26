@@ -1,35 +1,35 @@
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-
 #include "esp_log.h"
-
 #include "nvs_flash.h"
 
-#include "kuart.h"
-#include "loraprogrammer.h"
-#include "softap_sta.h"
+#include "include/kdatetime.h"
+#include "include/klittlefs.h"
+#include "include/kmdns.h"
+#include "include/kota.h"
+#include "include/krest.h"
+#include "include/kuart.h"
+#include "include/kwifi.h"
 
-#define TASK_SIZE (4092)
+static const char *TAG = "LoraProgrammer";
 
 void app_main(void) {
-  static TaskHandle_t KUartHandle = NULL;
-  static TaskHandle_t KUartRxHandle = NULL;
+  esp_err_t ret = nvs_flash_init();
 
-  loraprogrammer_t* loraprogrammer =
-      (loraprogrammer_t*)calloc(1, sizeof(loraprogrammer_t));
-  configASSERT(loraprogrammer != NULL);
-  loraprogrammer->semphr = xSemaphoreCreateMutex();
-  loraprogrammer->radio = (radio_data_t*)calloc(1, sizeof(radio_data_t));
-  configASSERT(loraprogrammer->radio != NULL);
-  loraprogrammer->lastMensage = (char *) calloc(1024, sizeof(char));
-  configASSERT(loraprogrammer->lastMensage != NULL);
+  if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
+      ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    ESP_ERROR_CHECK(nvs_flash_erase());
+    ret = nvs_flash_init();
+  }
 
-  ESP_ERROR_CHECK(nvs_flash_init());
-  ESP_ERROR_CHECK(softap_sta_init(loraprogrammer));
-  ESP_ERROR_CHECK(k_uart_init(loraprogrammer));
+  ESP_ERROR_CHECK(ret);
+  ESP_ERROR_CHECK(k_uart_init());
+  kota_mark_valid();
+  ESP_ERROR_CHECK(klittlefs_init());
+  ESP_ERROR_CHECK(kwifi_init());
+  kmdns_init();
+#if CONFIG_KWIFI_MODE_STA
+  kdatetime_init();
+#endif
+  krest_init();
 
-  xTaskCreatePinnedToCore(k_uart_task, "uart_task", TASK_SIZE, NULL, 5,
-                          &KUartHandle, 0);
-  xTaskCreatePinnedToCore(k_uart_rx_task, "k_uart_rx_task", TASK_SIZE, NULL, 5,
-                          &KUartRxHandle, 0);
+  ESP_LOGI(TAG, "ready...");
 }

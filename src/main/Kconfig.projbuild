@@ -1,8 +1,24 @@
 menu "KWIFI Configuration"
 
+choice KWIFI_MODE
+    prompt "WiFi mode"
+    default KWIFI_MODE_AP
+    help
+        Station connects to an existing AP (needed for internet time and normal
+        operation). Access Point mode makes the board itself the network, handy
+        for field debugging with no infrastructure around.
+
+config KWIFI_MODE_STA
+    bool "Station (connect to existing AP)"
+
+config KWIFI_MODE_AP
+    bool "Access Point"
+
+endchoice
+
 config KWIFI_SSID
     string "WiFi SSID"
-    default "LoraGate"
+    default "LoraProgrammer"
     help
         SSID to connect to (station mode) or to broadcast (AP mode).
 
@@ -18,10 +34,12 @@ config KWIFI_STA_MAXIMUM_RETRY
     default 10
 
 config KWIFI_AP_CHANNEL
+    depends on KWIFI_MODE_AP
     int "AP channel"
     default 1
 
 config KWIFI_AP_MAX_CONN
+    depends on KWIFI_MODE_AP
     int "AP max simultaneous connections"
     default 4
 
@@ -46,5 +64,41 @@ menu "KREST Configuration"
 config KREST_SERVER_PORT
     int "HTTP server port"
     default 80
+
+endmenu
+
+menu "KDATETIME Configuration"
+
+config KDATETIME_NTP_SERVER
+    string "NTP server"
+    default "pool.ntp.org"
+
+config KDATETIME_TZ
+    string "POSIX TZ string for local time"
+    default "<-03>3"
+    help
+        newlib POSIX TZ string. Default is fixed UTC-3 (Brasilia time, no DST).
+
+config KDATETIME_SYNC_TIMEOUT_SEC
+    int "Seconds to wait for the first NTP sync at boot"
+    default 15
+    help
+        kdatetime_init() blocks up to this long waiting for the first sync so
+        that /info has a valid local_time as soon as the REST server comes up.
+        Sync keeps retrying in the background afterwards regardless.
+
+endmenu
+
+menu "KLITTLEFS Configuration"
+
+config KLITTLEFS_BASE_PATH
+    string "LittleFS mount point"
+    default "/storage"
+
+config KLITTLEFS_PARTITION_LABEL
+    string "LittleFS partition label"
+    default "storage"
+    help
+        Must match a data partition of subtype 0x83 (littlefs) in partitions.csv.
 
 endmenu

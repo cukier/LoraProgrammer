@@ -16,31 +16,16 @@
 #define BUF_SIZE (1024)
 #define PATTERN_CHR_NUM (3)
 
-typedef enum RadioRoleEnum {
-  No_Role,
-  Find_Radio_Role,
-  Get_Radio_Data,
-  Write_Radio_Data,
-  Read_RSSI
-} radio_role_t;
-
 static const gpio_num_t tx2_pin = GPIO_NUM_25;
 static const gpio_num_t tx_pin = GPIO_NUM_26;
 static const gpio_num_t rx_pin = GPIO_NUM_14;
 static const gpio_num_t en_pin = GPIO_NUM_27;
 static const uart_port_t uart_port = UART_NUM_1;
-static const char* TAG = "kauart";
-static const char* Roles[] = {
-    "No_Role",          "Find_Radio_Role", "Get_Radio_Data",
-    "Write_Radio_Data", "Read_RSSI",
-};
+static const char *TAG = "kauart";
 
 static QueueHandle_t uart0_queue = NULL;
 static SemaphoreHandle_t uart_semphr = NULL;
-static radio_role_t role = No_Role;
-static loraprogrammer_t* loraprogrammer = NULL;
-static SemaphoreHandle_t semphr = NULL;
-static int radioFound = 0;
+static radio_data_t radio = {0};
 
 static void enRadio() {
   gpio_set_level(en_pin, 1);
@@ -52,9 +37,131 @@ static void disableRaidio() {
   ESP_LOGI(TAG, "Desligado");
 }
 
-esp_err_t k_uart_init(void* pvParameters) {
-  loraprogrammer = (loraprogrammer_t*)pvParameters;
-  semphr = loraprogrammer->semphr;
+static esp_err_t change_uart(uint32_t new_baudrate, char new_parity,
+                             int new_data, int new_stop) {
+  esp_err_t err = ESP_ERR_NOT_SUPPORTED;
+
+  uart_wait_tx_done(uart_port, 100 / portTICK_PERIOD_MS);
+  err = uart_set_baudrate(uart_port, new_baudrate);
+
+  if (err != ESP_OK)
+    return err;
+
+  if ((new_parity == 'n') || (new_parity == 'N'))
+    err = uart_set_parity(uart_port, UART_PARITY_DISABLE);
+  else if ((new_parity == 'e') || (new_parity == 'E'))
+    err = uart_set_parity(uart_port, UART_PARITY_EVEN);
+  else if ((new_parity == 'o') || (new_parity == 'O'))
+    err = uart_set_parity(uart_port, UART_PARITY_ODD);
+  else
+    return ESP_ERR_INVALID_ARG;
+
+  if (err != ESP_OK)
+    return err;
+
+  if (new_data == 5)
+    err = uart_set_word_length(uart_port, UART_DATA_5_BITS);
+  else if (new_data == 6)
+    err = uart_set_word_length(uart_port, UART_DATA_6_BITS);
+  else if (new_data == 7)
+    err = uart_set_word_length(uart_port, UART_DATA_7_BITS);
+  else if (new_data == 8)
+    err = uart_set_word_length(uart_port, UART_DATA_8_BITS);
+  else
+    return ESP_ERR_INVALID_ARG;
+
+  if (err != ESP_OK)
+    return err;
+
+  if (new_stop == 1)
+    err = uart_set_stop_bits(uart_port, UART_STOP_BITS_1);
+  else if (new_stop == 2)
+    err = uart_set_stop_bits(uart_port, UART_STOP_BITS_2);
+  else
+    return ESP_ERR_INVALID_ARG;
+
+  if (err != ESP_OK)
+    return err;
+
+  return ESP_OK;
+}
+
+void k_uart_rx_task(void *pvParameters) {
+  uart_event_t uartEvent;
+  uint8_t *dtmp = NULL;
+
+  (void)pvParameters;
+
+  vTaskDelay(pdMS_TO_TICKS(500));
+  enRadio();
+
+  for (;;) {
+    if (xQueueReceive(uart0_queue, (void *)&uartEvent, (TickType_t)100) ==
+        pdTRUE) {
+      if (uartEvent.type == UART_DATA) {
+        dtmp = (uint8_t *)malloc(uartEvent.size + 1);
+        uart_read_bytes(uart_port, (void *)dtmp, uartEvent.size, portMAX_DELAY);
+      }
+    }
+
+    if (dtmp != NULL) {
+      // ESP_LOG_BUFFER_HEXDUMP(TAG, dtmp, uartEvent.size, ESP_LOG_INFO);
+
+      if (strstr((char *)dtmp, "YL_800IL") != NULL) {
+        int baud = 0;
+        char parity = '0';
+        int data = 0;
+        int stop = 0;
+
+        sscanf((char *)dtmp, "%d %c %d %d YL_800IL", &baud, &parity, &data,
+               &stop);
+
+        ESP_LOGI(TAG, "Radio encontrado em baud %d parity %c data %d stop %d",
+                 baud, parity, data, stop);
+
+        esp_err_t err = change_uart(baud, parity, data, stop);
+
+        if (err != ESP_OK)
+          ESP_LOGW(TAG, "Erro ao configurar uart %d", uart_port);
+        else {
+          int len = -1;
+          uint8_t *request = RF1276_make_radio_read_command(&len);
+
+          configASSERT(request != NULL);
+          vTaskDelay(pdMS_TO_TICKS(100));
+
+          if (len > 0) {
+            ESP_ERROR_CHECK(uart_flush_input(uart_port));
+            uart_write_bytes(uart_port, (const void *)request, len);
+          }
+        }
+      } else if (strstr((char *)dtmp, "\xaf\xaf\x00\x00\xaf") != NULL) {
+        if (uartEvent.size == RF1276_COMMAND_SIZE) {
+          radio_data_t *ptr_radio =
+              RF1276_parse_radio(&dtmp[8], RF1276_DATA_SIZE);
+
+          if (ptr_radio != NULL) {
+            memcpy(&radio, ptr_radio, sizeof(radio_data_t));
+            char *parse = RF1276_toString(ptr_radio);
+            free(ptr_radio);
+
+            if (parse != NULL) {
+              ESP_LOGI(TAG, "%s", parse);
+              free(parse);
+            }
+          }
+        }
+      }
+
+      free(dtmp);
+      dtmp = NULL;
+    }
+  }
+
+  vTaskDelete(NULL);
+}
+
+esp_err_t k_uart_init(void) {
 
   uart_config_t uart_config = {
       .baud_rate = 9600,
@@ -64,14 +171,13 @@ esp_err_t k_uart_init(void* pvParameters) {
       .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
       .source_clk = UART_SCLK_DEFAULT,
   };
-  gpio_config_t configEn = {
-      .pin_bit_mask = (1ULL << en_pin) | (1ULL << tx2_pin),
-      .mode = GPIO_MODE_OUTPUT,
-      .pull_up_en = GPIO_PULLUP_DISABLE,
-      .pull_down_en = GPIO_PULLDOWN_DISABLE,
-      .intr_type = GPIO_INTR_DISABLE};
+  gpio_config_t configEn = {.pin_bit_mask =
+                                (1ULL << en_pin) | (1ULL << tx2_pin),
+                            .mode = GPIO_MODE_OUTPUT,
+                            .pull_up_en = GPIO_PULLUP_DISABLE,
+                            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+                            .intr_type = GPIO_INTR_DISABLE};
 
-  role = Find_Radio_Role;
   uart_semphr = xSemaphoreCreateMutex();
   configASSERT(uart_semphr != NULL);
   xSemaphoreGive(uart_semphr);
@@ -92,225 +198,7 @@ esp_err_t k_uart_init(void* pvParameters) {
 
   ESP_LOGI(TAG, "Init...");
 
+  xTaskCreate(k_uart_rx_task, "k_uart_rx_task", 2048, NULL, 5, NULL);
+
   return ESP_OK;
-}
-
-static esp_err_t change_uart_speed(uint32_t new_baudrate) {
-  uart_wait_tx_done(uart_port, 100 / portTICK_PERIOD_MS);
-  return uart_set_baudrate(uart_port, new_baudrate);
-}
-
-void k_uart_task(void* pvParameters) {
-  ESP_LOGI(TAG, "k_uart_task Init...");
-
-  for (;;) {
-    radio_role_t tx_role = No_Role;
-
-    vTaskDelay(100);
-
-    if (k_take_semphr(uart_semphr)) {
-      tx_role = role;
-      xSemaphoreGive(uart_semphr);
-    }
-
-    switch (tx_role) {
-      case Find_Radio_Role:
-        disableRaidio();
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        enRadio();
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        break;
-
-      case Write_Radio_Data:
-        vTaskDelay(pdMS_TO_TICKS(1000));
-
-        if (k_take_semphr(uart_semphr)) {
-          role = Find_Radio_Role;
-          xSemaphoreGive(uart_semphr);
-        }
-        break;
-
-      default:
-        break;
-    }
-
-    taskYIELD();
-  }
-
-  vTaskDelete(NULL);
-}
-
-void k_uart_rx_task(void* pvParameters) {
-  ESP_LOGI(TAG, "k_uart_queue_task Init...");
-
-  for (;;) {
-    uart_event_t uartEvent;
-    uint8_t* dtmp = NULL;
-    radio_role_t rx_role = No_Role;
-
-    vTaskDelay(100);
-
-    if (k_take_semphr(uart_semphr)) {
-      rx_role = role;
-      xSemaphoreGive(uart_semphr);
-    }
-
-    if (xQueueReceive(uart0_queue, (void*)&uartEvent, (TickType_t)100) ==
-        pdTRUE) {
-      switch (uartEvent.type) {
-        case UART_DATA: {
-          dtmp = (uint8_t*)malloc(uartEvent.size + 1);
-          uart_read_bytes(uart_port, (void*)dtmp, uartEvent.size,
-                          portMAX_DELAY);
-        } break;
-        case UART_BREAK:
-        case UART_BUFFER_FULL:
-        case UART_FIFO_OVF:
-        case UART_FRAME_ERR:
-        case UART_PARITY_ERR:
-        case UART_DATA_BREAK:
-        case UART_PATTERN_DET:
-        case UART_EVENT_MAX:
-          break;
-      }
-
-      if (dtmp != NULL) {
-        ESP_LOGI(TAG, "recebido %d bytes role %s:", uartEvent.size,
-                 Roles[rx_role]);
-        dtmp[uartEvent.size] = '\0';
-        ESP_LOG_BUFFER_HEXDUMP(TAG, dtmp, uartEvent.size, ESP_LOG_INFO);
-
-        switch (rx_role) {
-          case Find_Radio_Role: {
-            if ((strstr((char*)dtmp, "9600") != NULL) ||
-                (strstr((char*)dtmp, "19200") != NULL)) {
-              ESP_LOGI(TAG, "Radio encontrado");
-
-              if (strstr((char*)dtmp, "19200") != NULL) {
-                ESP_ERROR_CHECK(change_uart_speed(19200));
-                ESP_LOGI(TAG, "Alterado baud para 19200");
-              }
-
-              if (k_take_semphr(uart_semphr)) {
-                role = Get_Radio_Data;
-                xSemaphoreGive(uart_semphr);
-              }
-
-              int len = -1;
-              uint8_t* request = RF1276_make_radio_read_command(&len);
-              configASSERT(request != NULL);
-              vTaskDelay(pdMS_TO_TICKS(100));
-
-              if (len > 0) {
-                ESP_ERROR_CHECK(uart_flush_input(uart_port));
-                uart_write_bytes(uart_port, (const void*)request, len);
-                // ESP_LOG_BUFFER_HEXDUMP(TAG, request, len, ESP_LOG_INFO);
-              }
-
-              free(request);
-            }
-          } break;
-
-          case Get_Radio_Data: {
-            if (uartEvent.size == RF1276_COMMAND_SIZE) {
-              radio_data_t* radio =
-                  RF1276_parse_radio(&dtmp[8], RF1276_DATA_SIZE);
-
-              if (radio != NULL) {
-                radioFound = 1;
-                char* parse = RF1276_toString(radio);
-
-                if (k_take_semphr(semphr)) {
-                  memcpy(loraprogrammer->radio, radio, sizeof(radio_data_t));
-                  xSemaphoreGive(semphr);
-                }
-
-                free(radio);
-
-                if (parse != NULL) {
-                  ESP_LOGI(TAG, "%s", parse);
-                  free(parse);
-                }
-              }
-            } else if (radioFound) {
-              if (k_take_semphr(semphr)) {
-                role = Read_RSSI;
-                xSemaphoreGive(semphr);
-              }
-
-              int len = 0;
-              uint8_t* rssi = RF1276_make_radio_rssi_command(&len);
-              uart_write_bytes(uart_port, (const void*)rssi, len);
-              free(rssi);
-            } else {
-              if (k_take_semphr(semphr)) {
-                role = Find_Radio_Role;
-                xSemaphoreGive(semphr);
-              }
-            }
-          } break;
-
-          case Read_RSSI: {
-            if (uartEvent.size == RF1276_COMMAND_SIZE_RSSI) {
-              int rssi = 0;
-
-              rssi = dtmp[8] - 164;
-
-              if (k_take_semphr(semphr)) {
-                loraprogrammer->rssi = rssi;
-                role = Get_Radio_Data;
-                xSemaphoreGive(semphr);
-              }
-            } else {
-              if (k_take_semphr(semphr)) {
-                role = Get_Radio_Data;
-                xSemaphoreGive(semphr);
-              }
-            }
-          } break;
-
-          default:
-            break;
-        }
-
-        if (rx_role != Read_RSSI) {
-          if (k_take_semphr(semphr)) {
-            memset(loraprogrammer->lastMensage, '0', 1024);
-            strcpy(loraprogrammer->lastMensage, (char*)dtmp);
-            xSemaphoreGive(semphr);
-          }
-        }
-
-        free(dtmp);
-      }
-    }
-
-    if (k_take_semphr(semphr)) {
-      if (loraprogrammer->update) {
-        loraprogrammer->update = 0;
-        int len = 0;
-        uint8_t* data =
-            RF1276_make_radio_write_command(loraprogrammer->radio, &len);
-
-        if (data != NULL) {
-          // ESP_LOG_BUFFER_HEXDUMP(TAG, data, len, ESP_LOG_INFO);
-
-          if (k_take_semphr(uart_semphr)) {
-            role = Write_Radio_Data;
-            xSemaphoreGive(uart_semphr);
-
-            uart_write_bytes(uart_port, (const void*)data, len);
-          }
-
-          free(data);
-        }
-      }
-
-      xSemaphoreGive(semphr);
-    }
-
-    taskYIELD();
-  }
-
-  vTaskDelete(NULL);
 }

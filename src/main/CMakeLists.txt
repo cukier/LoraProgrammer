@@ -1,9 +1,14 @@
 idf_component_register(
     SRCS
-      "softap_sta.c"
       "LoraProgrammer.c"
       "kuart.c"
       "RF1216.c"
+      "kwifi.c"
+      "kmdns.c"
+      "klittlefs.c"
+      "kdatetime.c"
+      "kota.c"
+      "krest.c"
     INCLUDE_DIRS
       "."
       "include"
@@ -14,4 +19,5 @@ idf_component_register(
       esp_wifi
       esp_timer
       nvs_flash
+      app_update
 )

@@ -83,10 +83,11 @@ typedef struct radio_data_str {
   rf_power_t rf_power;
 } radio_data_t;
 
-uint8_t* RF1276_make_radio_read_command(int* lengh);
-radio_data_t* RF1276_parse_radio(uint8_t *data, int len);
-char* RF1276_toString(radio_data_t *data);
-uint8_t* RF1276_make_radio_write_command(radio_data_t* data, int* lengh);
-uint8_t* RF1276_make_radio_rssi_command(int* lengh);
+uint8_t *RF1276_make_radio_read_command(int *lengh);
+radio_data_t *RF1276_parse_radio(uint8_t *data, int len);
+char *RF1276_toString(radio_data_t *data);
+uint8_t *RF1276_make_radio_write_command(radio_data_t *data, int *lengh);
+uint8_t *RF1276_make_radio_rssi_command(int *lengh);
+char *RF1276_toJson(const radio_data_t *data);
 
 #endif /* RF1279_H_ */
