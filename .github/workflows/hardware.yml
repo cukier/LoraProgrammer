@@ -20,7 +20,7 @@ jobs:
 
       - name: Export Gerbers, drill files and BOM
         run: |
-          docker run --rm -v "${{ github.workspace }}/sch:/work" -w /work kicad/kicad:9.0 sh -c "
+          docker run --rm --user "$(id -u):$(id -g)" -v "${{ github.workspace }}/sch:/work" -w /work kicad/kicad:9.0 sh -c "
             kicad-cli pcb export gerbers --output gerbers/ Encoder.kicad_pcb &&
             kicad-cli pcb export drill --output gerbers/ Encoder.kicad_pcb &&
             kicad-cli sch export bom --output Encoder-bom.csv Encoder.kicad_sch
