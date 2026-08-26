@@ -1,0 +1,11 @@
+{
+    "Baudrate": 4,
+    "Parity": 0,
+    "Frequency": 915000000,
+    "Factor": 7,
+    "Mode": 0,
+    "BW": 9,
+    "ID": 0,
+    "NetID": 0,
+    "Power": 7
+}

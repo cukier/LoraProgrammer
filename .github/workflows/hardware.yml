@@ -1,0 +1,45 @@
+name: Hardware
+
+on:
+  push:
+    paths:
+      - 'sch/**'
+      - '.github/workflows/hardware.yml'
+  pull_request:
+    paths:
+      - 'sch/**'
+      - '.github/workflows/hardware.yml'
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Export Gerbers, drill files and BOM
+        run: |
+          docker run --rm -v "${{ github.workspace }}/sch:/work" -w /work kicad/kicad:9.0 sh -c "
+            kicad-cli pcb export gerbers --output gerbers/ Encoder.kicad_pcb &&
+            kicad-cli pcb export drill --output gerbers/ Encoder.kicad_pcb &&
+            kicad-cli sch export bom --output Encoder-bom.csv Encoder.kicad_sch
+          "
+
+      - name: Zip Gerbers
+        working-directory: sch/gerbers
+        run: zip -r ../Encoder-gerbers.zip .
+
+      - name: Upload Gerbers
+        uses: actions/upload-artifact@v4
+        with:
+          name: gerbers
+          path: sch/Encoder-gerbers.zip
+          if-no-files-found: error
+
+      - name: Upload BOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: bom
+          path: sch/Encoder-bom.csv
+          if-no-files-found: error

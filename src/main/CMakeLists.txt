@@ -1,0 +1,17 @@
+idf_component_register(
+    SRCS
+      "softap_sta.c"
+      "LoraProgrammer.c"
+      "kuart.c"
+      "RF1216.c"
+    INCLUDE_DIRS
+      "."
+      "include"
+    REQUIRES
+      cjson
+      esp_driver_gpio
+      esp_http_server
+      esp_wifi
+      esp_timer
+      nvs_flash
+)

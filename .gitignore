@@ -1,0 +1,22 @@
+build/
+managed_components/
+
+sdkconfig
+sdkconfig.old
+dependencies.lock
+
+# KiCad
+*.bak
+*.bck
+*.000
+_autosave-*
+*-save.kicad_sch
+*-save.kicad_pcb
+*.kicad_sch-bak
+*.kicad_pcb-bak
+*.lck
+fp-info-cache
+*-backups/
+
+.vscode/
+*.code-workspace

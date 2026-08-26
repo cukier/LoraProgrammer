@@ -1,0 +1,50 @@
+menu "KWIFI Configuration"
+
+config KWIFI_SSID
+    string "WiFi SSID"
+    default "LoraGate"
+    help
+        SSID to connect to (station mode) or to broadcast (AP mode).
+
+config KWIFI_PASSWORD
+    string "WiFi Password"
+    default "12345678"
+    help
+        WPA2 password. In AP mode, leave blank for an open network.
+
+config KWIFI_STA_MAXIMUM_RETRY
+    depends on KWIFI_MODE_STA
+    int "Maximum connection retries"
+    default 10
+
+config KWIFI_AP_CHANNEL
+    int "AP channel"
+    default 1
+
+config KWIFI_AP_MAX_CONN
+    int "AP max simultaneous connections"
+    default 4
+
+endmenu
+
+menu "KMDNS Configuration"
+
+config KMDNS_HOSTNAME
+    string "mDNS hostname"
+    default "loraprogrammer"
+    help
+        Device will be reachable at http://<hostname>.local/
+
+config KMDNS_INSTANCE_NAME
+    string "mDNS instance name"
+    default "LoraProgrammer"
+
+endmenu
+
+menu "KREST Configuration"
+
+config KREST_SERVER_PORT
+    int "HTTP server port"
+    default 80
+
+endmenu
