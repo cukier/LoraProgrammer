@@ -93,6 +93,9 @@ void k_uart_rx_task(void *pvParameters) {
   uart_event_t uartEvent;
   uint8_t *dtmp = NULL;
 
+  int data = 0;
+  int stop = 0;
+
   (void)pvParameters;
 
   vTaskDelay(pdMS_TO_TICKS(500));
@@ -113,8 +116,6 @@ void k_uart_rx_task(void *pvParameters) {
       if (strstr((char *)dtmp, "YL_800IL") != NULL) {
         int baud = 0;
         char parity = '0';
-        int data = 0;
-        int stop = 0;
 
         sscanf((char *)dtmp, "%d %c %d %d YL_800IL", &baud, &parity, &data,
                &stop);
@@ -143,13 +144,16 @@ void k_uart_rx_task(void *pvParameters) {
           radio_data_t *ptr_radio =
               RF1276_parse_radio(&dtmp[8], RF1276_DATA_SIZE);
 
+          ptr_radio->serial.length = data;
+          ptr_radio->serial.stop = stop;
+
           if (ptr_radio != NULL) {
             if (xSemaphoreTake(uart_semphr, pdMS_TO_TICKS(200)) == pdTRUE) {
               memcpy(&radio, ptr_radio, sizeof(radio_data_t));
               xSemaphoreGive(uart_semphr);
             }
 
-            char *parse = RF1276_toString(ptr_radio);
+            char *parse = RF1276_toJson(ptr_radio);
             free(ptr_radio);
 
             if (parse != NULL) {
@@ -240,28 +244,12 @@ esp_err_t lora_get_handler(httpd_req_t *req) {
       if (freq > 0.0f) {
         memcpy(&mRadio, &radio, sizeof(radio_data_t));
       }
-      
+
       xSemaphoreGive(uart_semphr);
     }
   }
 
-  char *strjson = RF1276_toString(&mRadio);
-
-  ESP_LOGI(TAG, "%s", strjson);
-  free(strjson);
-
-  cJSON_AddNumberToObject(root, "baudrate", (int)mRadio.baudrate);
-  cJSON_AddNumberToObject(root, "parity", (int)mRadio.parity);
-  cJSON_AddNumberToObject(root, "frequency_mhz", mRadio.frequency);
-  cJSON_AddNumberToObject(root, "rf_factor", (int)mRadio.rf_factor);
-  cJSON_AddNumberToObject(root, "mode", (int)mRadio.mode);
-  cJSON_AddNumberToObject(root, "rf_bw_index", (int)mRadio.rf_bw);
-  cJSON_AddNumberToObject(root, "id", mRadio.id);
-  cJSON_AddNumberToObject(root, "net_id", mRadio.net_id);
-  cJSON_AddNumberToObject(root, "rf_power_index", (int)mRadio.rf_power);
-
-  const char *json_str = cJSON_PrintUnformatted(root);
-  cJSON_Delete(root);
+  const char *json_str = RF1276_toJson(&mRadio);
 
   if (json_str == NULL) {
     httpd_resp_send_500(req);

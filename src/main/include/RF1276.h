@@ -71,9 +71,14 @@ typedef enum rf_power_enum {
   P_20DBM
 } rf_power_t;
 
-typedef struct radio_data_str {
+typedef struct radio_serial_str {
   baud_rate_t baudrate;
+  int length;
+  int stop;
   parity_t parity;
+} radio_serial_t;
+
+typedef struct radio_data_str {
   float frequency;
   rf_factor_t rf_factor;
   radio_mode_t mode;
@@ -81,13 +86,14 @@ typedef struct radio_data_str {
   uint16_t id;
   uint8_t net_id;
   rf_power_t rf_power;
+  radio_serial_t serial;
 } radio_data_t;
 
 uint8_t *RF1276_make_radio_read_command(int *lengh);
 radio_data_t *RF1276_parse_radio(uint8_t *data, int len);
-char *RF1276_toString(radio_data_t *data);
+// char *RF1276_toString(radio_data_t *data);
 uint8_t *RF1276_make_radio_write_command(radio_data_t *data, int *lengh);
 uint8_t *RF1276_make_radio_rssi_command(int *lengh);
-// char *RF1276_toJson(const radio_data_t *data);
+char *RF1276_toJson(const radio_data_t *data);
 
 #endif /* RF1279_H_ */
