@@ -88,6 +88,6 @@ radio_data_t *RF1276_parse_radio(uint8_t *data, int len);
 char *RF1276_toString(radio_data_t *data);
 uint8_t *RF1276_make_radio_write_command(radio_data_t *data, int *lengh);
 uint8_t *RF1276_make_radio_rssi_command(int *lengh);
-char *RF1276_toJson(const radio_data_t *data);
+// char *RF1276_toJson(const radio_data_t *data);
 
 #endif /* RF1279_H_ */

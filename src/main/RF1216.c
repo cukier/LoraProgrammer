@@ -94,6 +94,39 @@ radio_data_t *RF1276_parse_radio(uint8_t *data, int len) {
   return ret;
 }
 
+#if 0
+static int getRfFactor(const rf_factor_t rfFactor, char *str) {
+  if (rfFactor < RF_128 || rfFactor > RF_4096)
+    return -1;
+
+  switch (rfFactor) {
+  case RF_128:
+    strcpy(str, "128");
+    break;
+  case RF_256:
+    strcpy(str, "256");
+    break;
+  case RF_512:
+    strcpy(str, "512");
+    break;
+  case RF_1024:
+    strcpy(str, "1024");
+    break;
+  case RF_2048:
+    strcpy(str, "2048");
+    break;
+  case RF_4096:
+    strcpy(str, "4096");
+    break;
+  default:
+    strcpy(str, "???");
+    break;
+  }
+
+  return 0;
+}
+#endif
+
 char *RF1276_toString(radio_data_t *data) {
   if (data == NULL)
     return NULL;
@@ -101,7 +134,15 @@ char *RF1276_toString(radio_data_t *data) {
   char *ret = (char *)calloc(512, sizeof(char));
 
   if (ret != NULL) {
+#if 0
+    char rfFactor[5] = {0};
+
+    getRfFactor(data->rf_factor, rfFactor);
+#endif
     sprintf(ret, "Frequencia: %3.2f MHz\n", data->frequency / 1000000.0);
+#if 0
+    sprintf(ret + strlen(ret), "rf_factor: %s\n", rfFactor);
+#endif
 
     switch (data->rf_factor) {
     case RF_128:
@@ -289,6 +330,7 @@ uint8_t *RF1276_make_radio_rssi_command(int *lengh) {
   return RF1276_make_radio_request(CMD_RSSI, aux, RF1276_DATA_SIZE_RSSI, lengh);
 }
 
+#if 0
 char *RF1276_toJson(const radio_data_t *data) {
   if (data == NULL)
     return NULL;
@@ -314,3 +356,4 @@ char *RF1276_toJson(const radio_data_t *data) {
 
   return json_string;
 }
+#endif

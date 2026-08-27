@@ -12,6 +12,7 @@
 #include "include/kdatetime.h"
 #include "include/kota.h"
 #include "include/krest.h"
+#include "include/kuart.h"
 #include "include/kwifi.h"
 
 static const char *TAG = "krest";
@@ -48,9 +49,8 @@ static esp_err_t info_get_handler(httpd_req_t *req) {
   cJSON_AddStringToObject(root, "target", CONFIG_IDF_TARGET);
   cJSON_AddStringToObject(root, "idf_version", IDF_VER);
   cJSON_AddStringToObject(root, "firmware_version", app_desc->version);
-  cJSON_AddNumberToObject(
-      root, "free_heap_bytes",
-      (double)heap_caps_get_free_size(MALLOC_CAP_DEFAULT));
+  cJSON_AddNumberToObject(root, "free_heap_bytes",
+                          (double)heap_caps_get_free_size(MALLOC_CAP_DEFAULT));
   cJSON_AddNumberToObject(
       root, "min_free_heap_bytes",
       (double)heap_caps_get_minimum_free_size(MALLOC_CAP_DEFAULT));
@@ -133,10 +133,15 @@ esp_err_t krest_init(void) {
                             .method = HTTP_POST,
                             .handler = reboot_post_handler,
                             .user_ctx = NULL};
+  httpd_uri_t lora_get_uri = {.uri = "/lora",
+                           .method = HTTP_GET,
+                           .handler = lora_get_handler,
+                           .user_ctx = NULL};
 
   ESP_ERROR_CHECK(httpd_register_uri_handler(server, &index_uri));
   ESP_ERROR_CHECK(httpd_register_uri_handler(server, &info_uri));
   ESP_ERROR_CHECK(httpd_register_uri_handler(server, &reboot_uri));
+  ESP_ERROR_CHECK(httpd_register_uri_handler(server, &lora_get_uri));
   ESP_ERROR_CHECK(kota_register(server));
 
   ESP_LOGI(TAG, "REST server started on port %d", CONFIG_KREST_SERVER_PORT);

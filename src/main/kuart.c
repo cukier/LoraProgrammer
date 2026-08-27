@@ -6,10 +6,13 @@
 #include "driver/gpio.h"
 #include "driver/uart.h"
 
+#include "esp_http_server.h"
 #include "esp_log.h"
 
 #include "RF1276.h"
 #include "loraprogrammer.h"
+
+#include "cJSON.h"
 
 #include <string.h>
 
@@ -105,7 +108,7 @@ void k_uart_rx_task(void *pvParameters) {
     }
 
     if (dtmp != NULL) {
-      // ESP_LOG_BUFFER_HEXDUMP(TAG, dtmp, uartEvent.size, ESP_LOG_INFO);
+      ESP_LOG_BUFFER_HEXDUMP(TAG, dtmp, uartEvent.size, ESP_LOG_INFO);
 
       if (strstr((char *)dtmp, "YL_800IL") != NULL) {
         int baud = 0;
@@ -141,7 +144,11 @@ void k_uart_rx_task(void *pvParameters) {
               RF1276_parse_radio(&dtmp[8], RF1276_DATA_SIZE);
 
           if (ptr_radio != NULL) {
-            memcpy(&radio, ptr_radio, sizeof(radio_data_t));
+            if (xSemaphoreTake(uart_semphr, pdMS_TO_TICKS(200)) == pdTRUE) {
+              memcpy(&radio, ptr_radio, sizeof(radio_data_t));
+              xSemaphoreGive(uart_semphr);
+            }
+
             char *parse = RF1276_toString(ptr_radio);
             free(ptr_radio);
 
@@ -200,5 +207,70 @@ esp_err_t k_uart_init(void) {
 
   xTaskCreate(k_uart_rx_task, "k_uart_rx_task", 2048, NULL, 5, NULL);
 
+  return ESP_OK;
+}
+
+esp_err_t lora_get_handler(httpd_req_t *req) {
+  cJSON *root = cJSON_CreateObject();
+
+  if (root == NULL) {
+    httpd_resp_send_500(req);
+    return ESP_FAIL;
+  }
+
+  if (xSemaphoreTake(uart_semphr, pdMS_TO_TICKS(200)) == pdTRUE) {
+    memset(&radio, 0, sizeof(radio_data_t));
+    xSemaphoreGive(uart_semphr);
+  }
+
+  disableRaidio();
+  change_uart(9600, 'N', 8, 1);
+  vTaskDelay(pdMS_TO_TICKS(500));
+  enRadio();
+
+  float freq = -1.0f;
+  radio_data_t mRadio = {0};
+
+  while (freq <= 0.0f) {
+    vTaskDelay(pdMS_TO_TICKS(200));
+
+    if (xSemaphoreTake(uart_semphr, pdMS_TO_TICKS(200)) == pdTRUE) {
+      freq = radio.frequency;
+
+      if (freq > 0.0f) {
+        memcpy(&mRadio, &radio, sizeof(radio_data_t));
+      }
+      
+      xSemaphoreGive(uart_semphr);
+    }
+  }
+
+  char *strjson = RF1276_toString(&mRadio);
+
+  ESP_LOGI(TAG, "%s", strjson);
+  free(strjson);
+
+  cJSON_AddNumberToObject(root, "baudrate", (int)mRadio.baudrate);
+  cJSON_AddNumberToObject(root, "parity", (int)mRadio.parity);
+  cJSON_AddNumberToObject(root, "frequency_mhz", mRadio.frequency);
+  cJSON_AddNumberToObject(root, "rf_factor", (int)mRadio.rf_factor);
+  cJSON_AddNumberToObject(root, "mode", (int)mRadio.mode);
+  cJSON_AddNumberToObject(root, "rf_bw_index", (int)mRadio.rf_bw);
+  cJSON_AddNumberToObject(root, "id", mRadio.id);
+  cJSON_AddNumberToObject(root, "net_id", mRadio.net_id);
+  cJSON_AddNumberToObject(root, "rf_power_index", (int)mRadio.rf_power);
+
+  const char *json_str = cJSON_PrintUnformatted(root);
+  cJSON_Delete(root);
+
+  if (json_str == NULL) {
+    httpd_resp_send_500(req);
+    return ESP_FAIL;
+  }
+
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_sendstr(req, json_str);
+
+  free((void *)json_str);
   return ESP_OK;
 }
