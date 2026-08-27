@@ -10,9 +10,9 @@
 #include "cJSON.h"
 
 #include "include/kdatetime.h"
+#include "include/klora.h"
 #include "include/kota.h"
 #include "include/krest.h"
-#include "include/kuart.h"
 #include "include/kwifi.h"
 
 static const char *TAG = "krest";

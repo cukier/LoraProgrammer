@@ -17,3 +17,6 @@ dependencies:
   espressif/mdns: ^1.9.1
   espressif/cjson: ^1.7.19~2
   joltwallet/littlefs: ^1.22.3
+  # NiceRF LoRa127X-C1 / SX1276 driver, used only when
+  # CONFIG_KLORA_RADIO_SX127X is selected (see main/klora_sx127x.c).
+  dernasherbrezon/sx127x: ^5.0.1

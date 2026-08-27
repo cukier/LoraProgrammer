@@ -3,10 +3,10 @@
 
 #include "include/kdatetime.h"
 #include "include/klittlefs.h"
+#include "include/klora.h"
 #include "include/kmdns.h"
 #include "include/kota.h"
 #include "include/krest.h"
-#include "include/kuart.h"
 #include "include/kwifi.h"
 
 static const char *TAG = "LoraProgrammer";
@@ -21,7 +21,7 @@ void app_main(void) {
   }
 
   ESP_ERROR_CHECK(ret);
-  ESP_ERROR_CHECK(k_uart_init());
+  ESP_ERROR_CHECK(klora_init());
   kota_mark_valid();
   ESP_ERROR_CHECK(klittlefs_init());
   ESP_ERROR_CHECK(kwifi_init());

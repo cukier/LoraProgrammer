@@ -10,6 +10,7 @@
 #include "esp_log.h"
 
 #include "RF1276.h"
+#include "include/klora.h"
 #include "loraprogrammer.h"
 
 #include "cJSON.h"
@@ -19,11 +20,11 @@
 #define BUF_SIZE (1024)
 #define PATTERN_CHR_NUM (3)
 
-static const gpio_num_t tx2_pin = GPIO_NUM_25;
-static const gpio_num_t tx_pin = GPIO_NUM_26;
-static const gpio_num_t rx_pin = GPIO_NUM_14;
-static const gpio_num_t en_pin = GPIO_NUM_27;
-static const uart_port_t uart_port = UART_NUM_1;
+static const gpio_num_t tx_pin = CONFIG_KLORA_RF1276_TX_GPIO;
+static const gpio_num_t rx_pin = CONFIG_KLORA_RF1276_RX_GPIO;
+static const gpio_num_t en_pin = CONFIG_KLORA_RF1276_EN_GPIO;
+static const int aux_pin = CONFIG_KLORA_RF1276_AUX_GPIO;
+static const uart_port_t uart_port = CONFIG_KLORA_RF1276_UART_NUM;
 static const char *TAG = "kauart";
 
 static QueueHandle_t uart0_queue = NULL;
@@ -184,18 +185,21 @@ void k_uart_rx_task(void *pvParameters) {
   vTaskDelete(NULL);
 }
 
-esp_err_t k_uart_init(void) {
+esp_err_t klora_init(void) {
 
   uart_config_t uart_config = {
-      .baud_rate = 9600,
+      .baud_rate = CONFIG_KLORA_RF1276_DEFAULT_BAUD,
       .data_bits = UART_DATA_8_BITS,
       .parity = UART_PARITY_DISABLE,
       .stop_bits = UART_STOP_BITS_1,
       .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
       .source_clk = UART_SCLK_DEFAULT,
   };
-  gpio_config_t configEn = {.pin_bit_mask =
-                                (1ULL << en_pin) | (1ULL << tx2_pin),
+  uint64_t out_pins = 1ULL << en_pin;
+  if (aux_pin >= 0) {
+    out_pins |= 1ULL << aux_pin;
+  }
+  gpio_config_t configEn = {.pin_bit_mask = out_pins,
                             .mode = GPIO_MODE_OUTPUT,
                             .pull_up_en = GPIO_PULLUP_DISABLE,
                             .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -215,7 +219,9 @@ esp_err_t k_uart_init(void) {
                                                     PATTERN_CHR_NUM, 9, 0, 0));
   ESP_ERROR_CHECK(uart_pattern_queue_reset(uart_port, 20));
   ESP_ERROR_CHECK(gpio_config(&configEn));
-  gpio_set_level(tx2_pin, 1);
+  if (aux_pin >= 0) {
+    gpio_set_level(aux_pin, 1);
+  }
 
   disableRaidio();
 
@@ -240,7 +246,7 @@ esp_err_t lora_info_get_handler(httpd_req_t *req) {
   }
 
   disableRaidio();
-  change_uart(9600, 'N', 8, 1);
+  change_uart(CONFIG_KLORA_RF1276_DEFAULT_BAUD, 'N', 8, 1);
   vTaskDelay(pdMS_TO_TICKS(500));
   enRadio();
 

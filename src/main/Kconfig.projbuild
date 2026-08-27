@@ -45,6 +45,154 @@ config KWIFI_AP_MAX_CONN
 
 endmenu
 
+menu "KLORA Configuration"
+
+choice KLORA_RADIO
+    prompt "LoRa radio module"
+    default KLORA_RADIO_RF1276
+    help
+        Which physical LoRa module this firmware talks to. Only the selected
+        back end is compiled in (see main/CMakeLists.txt); the REST API
+        (GET/POST /lora, GET/POST /lora/rxtx) is the same either way.
+
+config KLORA_RADIO_RF1276
+    bool "Appcon Wireless RF1276 / YL_800IL (UART, AF-framed commands)"
+    help
+        Module with its own MCU reached over a UART: configuration is read and
+        written with the 0xAF-framed command protocol (kuart.c + RF1216.c) and
+        payload data is transparent (raw bytes in/out on the same UART).
+
+config KLORA_RADIO_SX127X
+    bool "NiceRF LoRa127X-C1 / Semtech SX1276 (native SPI)"
+    help
+        Bare SX1276 modem driven directly by the ESP32 over SPI using the
+        dernasherbrezon/sx127x component (klora_sx127x.c). It has no on-module
+        configuration store, so "programming" it means applying the settings
+        below on every boot and via POST /lora at runtime.
+
+endchoice
+
+if KLORA_RADIO_RF1276
+
+config KLORA_RF1276_UART_NUM
+    int "UART port number"
+    default 1
+
+config KLORA_RF1276_TX_GPIO
+    int "UART TX GPIO (-> module RX)"
+    default 26
+
+config KLORA_RF1276_RX_GPIO
+    int "UART RX GPIO (<- module TX)"
+    default 14
+
+config KLORA_RF1276_EN_GPIO
+    int "Module enable GPIO (active-high)"
+    default 27
+    help
+        Driven low to power the module down between config read/write cycles and
+        high to bring it back up (see enRadio()/disableRaidio() in kuart.c).
+
+config KLORA_RF1276_AUX_GPIO
+    int "Auxiliary GPIO held high at boot (-1 to disable)"
+    default 25
+    help
+        Historically "tx2" in kuart.c: configured as an output and driven high at
+        init alongside the enable pin. Set to -1 if this board has nothing wired
+        there.
+
+config KLORA_RF1276_DEFAULT_BAUD
+    int "Initial UART baud rate"
+    default 9600
+    help
+        Rate used until the module announces its own "<baud> <parity> <data>
+        <stop> YL_800IL" banner, after which the UART is reconfigured to match.
+
+endif # KLORA_RADIO_RF1276
+
+if KLORA_RADIO_SX127X
+
+config KLORA_SCK_GPIO
+    int "SPI SCK GPIO"
+    default 18
+
+config KLORA_MISO_GPIO
+    int "SPI MISO GPIO"
+    default 19
+
+config KLORA_MOSI_GPIO
+    int "SPI MOSI GPIO"
+    default 23
+
+config KLORA_SS_GPIO
+    int "SPI chip-select GPIO (SS)"
+    default 4
+
+config KLORA_RESET_GPIO
+    int "Reset GPIO (active-low)"
+    default 25
+
+config KLORA_DIO0_GPIO
+    int "DIO0 (RX_DONE/TX_DONE interrupt) GPIO"
+    default 26
+
+config KLORA_FREQUENCY_HZ
+    int "Center frequency (Hz)"
+    default 915000000
+    help
+        915 MHz is the ISM band used in Brazil/US. Use 868000000 for the EU
+        868 MHz band - check local regulations.
+
+config KLORA_BANDWIDTH_HZ
+    int "LoRa signal bandwidth (Hz)"
+    default 125000
+    help
+        Standard LoRa bandwidths: 7800, 10400, 15600, 20800, 31250, 41700,
+        62500, 125000, 250000, 500000. Rounded to the nearest supported value
+        at runtime.
+
+config KLORA_SPREADING_FACTOR
+    int "Spreading factor (SF6-SF12)"
+    range 6 12
+    default 9
+    help
+        Higher = longer range, lower data rate, longer airtime.
+
+config KLORA_CODING_RATE_DENOM
+    int "Coding rate denominator (4/x)"
+    range 5 8
+    default 5
+    help
+        4/5 is the least redundant (fastest); 4/8 is the most robust.
+
+config KLORA_SYNC_WORD
+    hex "Sync word"
+    default 0x12
+    help
+        0x12 is the private/default LoRaWAN-incompatible sync word for
+        point-to-point links. Both ends of the link must match.
+
+config KLORA_PREAMBLE_LENGTH
+    int "Preamble length (symbols)"
+    default 8
+
+config KLORA_TX_POWER_DBM
+    int "TX power (dBm, PA_BOOST pin)"
+    range 2 20
+    default 17
+
+config KLORA_ENABLE_CRC
+    bool "Enable payload CRC"
+    default y
+
+config KLORA_TX_TIMEOUT_MS
+    int "Milliseconds to wait for TX_DONE before giving up on a send"
+    default 4000
+
+endif # KLORA_RADIO_SX127X
+
+endmenu
+
 menu "KMDNS Configuration"
 
 config KMDNS_HOSTNAME
