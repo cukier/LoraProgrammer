@@ -94,9 +94,8 @@ radio_data_t *RF1276_parse_radio(uint8_t *data, int len) {
   return ret;
 }
 
-#if 0
 static int getRfFactor(const rf_factor_t rfFactor, char *str) {
-  if (rfFactor < RF_128 || rfFactor > RF_4096)
+  if ((rfFactor < RF_128) || (rfFactor > RF_4096) || (strlen(str) < 4))
     return -1;
 
   switch (rfFactor) {
@@ -125,7 +124,123 @@ static int getRfFactor(const rf_factor_t rfFactor, char *str) {
 
   return 0;
 }
-#endif
+
+static int getMode(const radio_mode_t rfMode, char *str) {
+  if ((rfMode < MODE_STANDARD) || (rfMode > MODE_SLEEP) || (strlen(str) < 9))
+    return -1;
+
+  switch (rfMode) {
+  case MODE_STANDARD:
+    strcpy(str, "STANDARD");
+    break;
+  case MODE_LOW_POWER:
+    strcpy(str, "LOW POWER");
+    break;
+  case MODE_SLEEP:
+    strcpy(str, "SLEEP");
+    break;
+  default:
+    strcpy(str, "???");
+    break;
+  }
+
+  return 0;
+}
+
+static int getRfBw(const rf_bw_t rfBw, char *str) {
+  if ((rfBw < BW_62_5K) || (rfBw > BW_500K) || (strlen(str) < 4))
+    return -1;
+
+  switch (rfBw) {
+  case BW_62_5K:
+    strcpy(str, "62.5");
+    break;
+  case BW_125K:
+    strcpy(str, "125");
+    break;
+  case BW_250K:
+    strcpy(str, "250");
+    break;
+  case BW_500K:
+    strcpy(str, "500");
+    break;
+  default:
+    strcpy(str, "???");
+    break;
+  }
+
+  return 0;
+}
+
+static int getRfPower(const rf_power_t rfPwr, char *str) {
+  if ((rfPwr < P_4DBM) || (rfPwr > P_20DBM) || (strlen(str) < 9))
+    return -1;
+
+  switch (rfPwr) {
+  case P_4DBM:
+    strcpy(str, "1 (4dBm)");
+    break;
+  case P_7DBM:
+    strcpy(str, "2 (7dBm)");
+    break;
+  case P_10DBM:
+    strcpy(str, "3 (10dBm)");
+    break;
+  case P_13DBM:
+    strcpy(str, "4 (13dBm)");
+    break;
+  case P_14DBM:
+    strcpy(str, "5 (14dBm)");
+    break;
+  case P_17DBM:
+    strcpy(str, "6 (17dBm)");
+    break;
+  case P_20DBM:
+    strcpy(str, "7 (20dBm)");
+    break;
+  default:
+    strcpy(str, "???");
+    break;
+  }
+
+  return 0;
+}
+
+static int getRfBaud(const baud_rate_t rfBaud, char *str) {
+  if ((rfBaud < B1200BPS) || (rfBaud > B115200PS) || (strlen(str) < 6))
+    return -1;
+
+  switch (rfBaud) {
+  case B1200BPS:
+    strcpy(str, "1200");
+    break;
+  case B2400BPS:
+    strcpy(str, "2400");
+    break;
+  case B4800BPS:
+    strcpy(str, "4800");
+    break;
+  case B9600BPS:
+    strcpy(str, "9600");
+    break;
+  case B19200BPS:
+    strcpy(str, "19200");
+    break;
+  case B38400BPS:
+    strcpy(str, "38400");
+    break;
+  case B57600BPS:
+    strcpy(str, "57600");
+    break;
+  case B115200PS:
+    strcpy(str, "115200");
+    break;
+  default:
+    break;
+  }
+
+  return 0;
+}
 
 char *RF1276_toString(radio_data_t *data) {
   if (data == NULL)
@@ -134,119 +249,32 @@ char *RF1276_toString(radio_data_t *data) {
   char *ret = (char *)calloc(512, sizeof(char));
 
   if (ret != NULL) {
-#if 0
     char rfFactor[5] = {0};
+    char rfMode[10] = {0};
+    char rfBw[5] = {0};
+    char rfPwr[10] = {0};
+    char rfBaud[7] = {0};
+    int err = 0;
 
-    getRfFactor(data->rf_factor, rfFactor);
-#endif
+    err = getRfFactor(data->rf_factor, rfFactor);
+    err |= getMode(data->mode, rfMode);
+    err |= getRfBw(data->rf_bw, rfBw);
+    err |= getRfBw(data->rf_power, rfPwr);
+    err |= getRfBaud(data->baudrate, rfBaud);
+
+    if (err != 0) {
+      free(ret);
+      return NULL;
+    }
+
     sprintf(ret, "Frequencia: %3.2f MHz\n", data->frequency / 1000000.0);
-#if 0
     sprintf(ret + strlen(ret), "rf_factor: %s\n", rfFactor);
-#endif
-
-    switch (data->rf_factor) {
-    case RF_128:
-      sprintf(ret + strlen(ret), "rf_factor: 128\n");
-      break;
-    case RF_256:
-      sprintf(ret + strlen(ret), "rf_factor: 256\n");
-      break;
-    case RF_512:
-      sprintf(ret + strlen(ret), "rf_factor: 512\n");
-      break;
-    case RF_1024:
-      sprintf(ret + strlen(ret), "rf_factor: 1024\n");
-      break;
-    case RF_2048:
-      sprintf(ret + strlen(ret), "rf_factor: 2048\n");
-      break;
-    case RF_4096:
-      sprintf(ret + strlen(ret), "rf_factor: 4096\n");
-      break;
-    }
-
-    switch (data->mode) {
-    case MODE_STANDARD:
-      sprintf(ret + strlen(ret), "RF_Mode: STANDARD\n");
-      break;
-    case MODE_SLEEP:
-      sprintf(ret + strlen(ret), "RF_Mode: SLEEP\n");
-      break;
-    case MODE_LOW_POWER:
-      sprintf(ret + strlen(ret), "RF_Mode: LOW POWER\n");
-      break;
-    }
-
-    switch (data->rf_bw) {
-    case BW_125K:
-      sprintf(ret + strlen(ret), "RF_BW: 125\n");
-      break;
-    case BW_250K:
-      sprintf(ret + strlen(ret), "RF_BW: 250\n");
-      break;
-    case BW_500K:
-      sprintf(ret + strlen(ret), "RF_BW: 500\n");
-      break;
-    case BW_62_5K:
-      sprintf(ret + strlen(ret), "RF_BW: 62.5\n");
-      break;
-    }
-
+    sprintf(ret + strlen(ret), "RF_Mode: %s\n", rfMode);
+    sprintf(ret + strlen(ret), "RF_BW: %sk\n", rfBw);
     sprintf(ret + strlen(ret), "Node ID: %u\n", data->id);
     sprintf(ret + strlen(ret), "Net ID: %u\n", data->net_id);
-
-    switch (data->rf_power) {
-    case P_4DBM:
-      sprintf(ret + strlen(ret), "Power: 1 (4dBm)\n");
-      break;
-    case P_7DBM:
-      sprintf(ret + strlen(ret), "Power: 2 (7dBm)\n");
-      break;
-    case P_10DBM:
-      sprintf(ret + strlen(ret), "Power: 3 (10dBm)\n");
-      break;
-    case P_13DBM:
-      sprintf(ret + strlen(ret), "Power: 4 (13dBm)\n");
-      break;
-    case P_14DBM:
-      sprintf(ret + strlen(ret), "Power: 5 (14dBm)\n");
-      break;
-    case P_17DBM:
-      sprintf(ret + strlen(ret), "Power: 6 (17dBm)\n");
-      break;
-    case P_20DBM:
-      sprintf(ret + strlen(ret), "Power: 7 (20dBm)\n");
-      break;
-    }
-
-    switch (data->baudrate) {
-    case B1200BPS:
-      sprintf(ret + strlen(ret), "Baud rate: 1200");
-      break;
-    case B2400BPS:
-      sprintf(ret + strlen(ret), "Baud rate: 2400");
-      break;
-    case B4800BPS:
-      sprintf(ret + strlen(ret), "Baud rate: 4800");
-      break;
-    case B9600BPS:
-      sprintf(ret + strlen(ret), "Baud rate: 9600");
-      break;
-    case B19200BPS:
-      sprintf(ret + strlen(ret), "Baud rate: 19200");
-      break;
-    case B38400BPS:
-      sprintf(ret + strlen(ret), "Baud rate: 38400");
-      break;
-    case B57600BPS:
-      sprintf(ret + strlen(ret), "Baud rate: 57600");
-      break;
-    case B115200PS:
-      sprintf(ret + strlen(ret), "Baud rate: 115200");
-      break;
-    default:
-      break;
-    }
+    sprintf(ret + strlen(ret), "Power: %s\n", rfPwr);
+    sprintf(ret + strlen(ret), "Baud rate: %s", rfBaud);
 
     switch (data->parity) {
     case NO_PARITY:
