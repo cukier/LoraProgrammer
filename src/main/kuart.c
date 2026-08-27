@@ -226,6 +226,55 @@ esp_err_t k_uart_init(void) {
   return ESP_OK;
 }
 
+esp_err_t lora_info_get_handler(httpd_req_t *req) {
+  cJSON *root = cJSON_CreateObject();
+
+  if (root == NULL) {
+    httpd_resp_send_500(req);
+    return ESP_FAIL;
+  }
+
+  if (xSemaphoreTake(uart_semphr, pdMS_TO_TICKS(200)) == pdTRUE) {
+    memset(&radio, 0, sizeof(radio_data_t));
+    xSemaphoreGive(uart_semphr);
+  }
+
+  disableRaidio();
+  change_uart(9600, 'N', 8, 1);
+  vTaskDelay(pdMS_TO_TICKS(500));
+  enRadio();
+
+  float freq = -1.0f;
+  radio_data_t mRadio = {0};
+
+  while (freq <= 0.0f) {
+    vTaskDelay(pdMS_TO_TICKS(200));
+
+    if (xSemaphoreTake(uart_semphr, pdMS_TO_TICKS(200)) == pdTRUE) {
+      freq = radio.frequency;
+
+      if (freq > 0.0f) {
+        memcpy(&mRadio, &radio, sizeof(radio_data_t));
+      }
+
+      xSemaphoreGive(uart_semphr);
+    }
+  }
+
+  char *json_str = RF1276_toJson(&mRadio);
+
+  if (json_str == NULL) {
+    httpd_resp_send_500(req);
+    return ESP_FAIL;
+  }
+
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_sendstr(req, json_str);
+
+  free((void *)json_str);
+  return ESP_OK;
+}
+
 static char *hexdump_to_string(const void *addr, size_t len) {
   const unsigned char *pc = (const unsigned char *)addr;
   size_t i, j;
@@ -269,73 +318,34 @@ static char *hexdump_to_string(const void *addr, size_t len) {
   return buffer;
 }
 
-esp_err_t lora_get_handler(httpd_req_t *req) {
-  cJSON *root = cJSON_CreateObject();
-
-  if (root == NULL) {
-    httpd_resp_send_500(req);
-    return ESP_FAIL;
-  }
+esp_err_t lora_rx_get_handler(httpd_req_t *req) {
+  char *buffer_rx_str = NULL;
+  size_t buffer_rx_str_len = 0;
 
   if (xSemaphoreTake(uart_semphr, pdMS_TO_TICKS(200)) == pdTRUE) {
-    memset(&radio, 0, sizeof(radio_data_t));
+    buffer_rx_str = hexdump_to_string(buffer_rx, buffer_rx_len);
+    buffer_rx_str_len = buffer_rx_len;
     xSemaphoreGive(uart_semphr);
   }
 
-  disableRaidio();
-  change_uart(9600, 'N', 8, 1);
-  vTaskDelay(pdMS_TO_TICKS(500));
-  enRadio();
-
-  float freq = -1.0f;
-  radio_data_t mRadio = {0};
-
-  while (freq <= 0.0f) {
-    vTaskDelay(pdMS_TO_TICKS(200));
-
-    if (xSemaphoreTake(uart_semphr, pdMS_TO_TICKS(200)) == pdTRUE) {
-      freq = radio.frequency;
-
-      if (freq > 0.0f) {
-        memcpy(&mRadio, &radio, sizeof(radio_data_t));
-      }
-
-      xSemaphoreGive(uart_semphr);
-    }
-  }
-
-  char *json_str = RF1276_toJson(&mRadio);
-
-  if (json_str == NULL) {
-    httpd_resp_send_500(req);
+  if (buffer_rx_str == NULL) {
+    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                        "Failed to allocate memory for hexdump");
     return ESP_FAIL;
   }
 
-  cJSON *json = cJSON_Parse(json_str);
+  httpd_resp_set_type(req, "text/plain");
+  httpd_resp_set_status(req, "200 OK");
 
-  free(json_str);
-  json_str = NULL;
+  esp_err_t err = httpd_resp_send(req, buffer_rx_str, buffer_rx_str_len);
 
-  cJSON *buffer_json = cJSON_CreateObject();
-  char *buffer_content = NULL;
-  size_t buffer_json_len = 0;
+  free(buffer_rx_str);
 
-  if (xSemaphoreTake(uart_semphr, pdMS_TO_TICKS(200)) == pdTRUE) {
-    buffer_content = hexdump_to_string(buffer_rx, buffer_rx_len);
-    buffer_json_len = buffer_rx_len;
-    xSemaphoreGive(uart_semphr);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to send HTTP response payload: %s",
+             esp_err_to_name(err));
+    return err;
   }
 
-  cJSON_AddStringToObject(buffer_json, "rx buffer", buffer_content);
-  cJSON_AddNumberToObject(buffer_json, "Lenght", buffer_json_len);
-  cJSON_AddItemToObject(json, "Buffer Rx", buffer_json);
-  free(buffer_content);
-  json_str = cJSON_Print(json);
-  cJSON_Delete(json);
-
-  httpd_resp_set_type(req, "application/json");
-  httpd_resp_sendstr(req, json_str);
-
-  free((void *)json_str);
   return ESP_OK;
 }
