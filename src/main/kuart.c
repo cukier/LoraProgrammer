@@ -483,14 +483,27 @@ esp_err_t lora_info_post_handler(httpd_req_t *req) {
       xSemaphoreGive(uart_semphr);
     }
 
-    char *novo_radio = RF1276_toJson(&updated_cfg);
-    ESP_LOGI(TAG, "%s", novo_radio);
-    free(novo_radio);
+    {
+      int len = -1;
+      uint8_t *request = RF1276_make_radio_write_command(&updated_cfg, &len);
+
+      configASSERT(request != NULL);
+      vTaskDelay(pdMS_TO_TICKS(100));
+
+      if (len > 0) {
+        ESP_ERROR_CHECK(uart_flush_input(uart_port));
+        uart_write_bytes(uart_port, (const void *)request, len);
+      }
+    }
   } else {
     httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
                         "Payload contained zero valid fields");
     return ESP_FAIL;
   }
+
+  // disableRaidio();
+  // vTaskDelay(pdMS_TO_TICKS(200));
+  // enRadio();
 
   httpd_resp_set_type(req, "application/json");
   httpd_resp_set_status(req, "200 OK");
