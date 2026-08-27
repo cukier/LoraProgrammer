@@ -139,17 +139,22 @@ esp_err_t krest_init(void) {
                                     .method = HTTP_POST,
                                     .handler = lora_info_post_handler,
                                     .user_ctx = NULL};
-  httpd_uri_t lora_rx_get_uri = {.uri = "/lora/rx",
-                                 .method = HTTP_GET,
-                                 .handler = lora_rx_get_handler,
-                                 .user_ctx = NULL};
+  httpd_uri_t lora_rxtx_get_uri = {.uri = "/lora/rxtx",
+                                   .method = HTTP_GET,
+                                   .handler = lora_rxtx_get_handler,
+                                   .user_ctx = NULL};
+  httpd_uri_t lora_rxtx_post_uri = {.uri = "/lora/rxtx",
+                                    .method = HTTP_POST,
+                                    .handler = lora_rxtx_post_handler,
+                                    .user_ctx = NULL};
 
   ESP_ERROR_CHECK(httpd_register_uri_handler(server, &index_uri));
   ESP_ERROR_CHECK(httpd_register_uri_handler(server, &info_uri));
   ESP_ERROR_CHECK(httpd_register_uri_handler(server, &reboot_uri));
   ESP_ERROR_CHECK(httpd_register_uri_handler(server, &lora_info_get_uri));
   ESP_ERROR_CHECK(httpd_register_uri_handler(server, &lora_info_post_uri));
-  ESP_ERROR_CHECK(httpd_register_uri_handler(server, &lora_rx_get_uri));
+  ESP_ERROR_CHECK(httpd_register_uri_handler(server, &lora_rxtx_get_uri));
+  ESP_ERROR_CHECK(httpd_register_uri_handler(server, &lora_rxtx_post_uri));
   ESP_ERROR_CHECK(kota_register(server));
 
   ESP_LOGI(TAG, "REST server started on port %d", CONFIG_KREST_SERVER_PORT);

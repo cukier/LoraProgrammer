@@ -110,7 +110,7 @@ void k_uart_rx_task(void *pvParameters) {
     }
 
     if (dtmp != NULL) {
-      // ESP_LOG_BUFFER_HEXDUMP(TAG, dtmp, uartEvent.size, ESP_LOG_INFO);
+      ESP_LOG_BUFFER_HEXDUMP(TAG, dtmp, uartEvent.size, ESP_LOG_INFO);
 
       if (strstr((char *)dtmp, "YL_800IL") != NULL) {
         int baud = 0;
@@ -557,7 +557,7 @@ static char *hexdump_to_string(const void *addr, size_t len) {
   return buffer;
 }
 
-esp_err_t lora_rx_get_handler(httpd_req_t *req) {
+esp_err_t lora_rxtx_get_handler(httpd_req_t *req) {
   char *buffer_rx_str = NULL;
   size_t buffer_rx_str_len = 0;
 
@@ -585,6 +585,75 @@ esp_err_t lora_rx_get_handler(httpd_req_t *req) {
              esp_err_to_name(err));
     return err;
   }
+
+  return ESP_OK;
+}
+
+esp_err_t lora_rxtx_post_handler(httpd_req_t *req) {
+  if (req->content_len <= 0) {
+    ESP_LOGE(TAG, "Content-Length is missing or zero");
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing JSON payload");
+    return ESP_FAIL;
+  }
+
+  char *json_buf = malloc(req->content_len + 1);
+
+  if (!json_buf) {
+    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                        "Heap allocation failed");
+    return ESP_FAIL;
+  }
+
+  int received = httpd_req_recv(req, json_buf, req->content_len);
+
+  if (received <= 0) {
+    free(json_buf);
+
+    if (received == HTTPD_SOCK_ERR_TIMEOUT) {
+      httpd_resp_send_err(req, HTTPD_408_REQ_TIMEOUT, "Socket timeout");
+      return ESP_ERR_TIMEOUT;
+    }
+
+    return ESP_FAIL;
+  }
+
+  json_buf[received] = '\0';
+  cJSON *root = cJSON_Parse(json_buf);
+  free(json_buf);
+
+  if (!root) {
+    ESP_LOGE(TAG, "JSON Syntax Error");
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                        "Invalid JSON formatting syntax");
+    return ESP_FAIL;
+  }
+
+  cJSON *msg = cJSON_GetObjectItemCaseSensitive(root, "message");
+  bool updated = false;
+
+  if (cJSON_IsString(msg) && msg->valuestring) {
+    size_t len = strlen(msg->valuestring);
+
+    if (len > 0) {
+      ESP_ERROR_CHECK(uart_flush_input(uart_port));
+      uart_write_bytes(uart_port, (const void *)msg->valuestring, len);
+    }
+
+    updated = true;
+  }
+
+  if (!updated) {
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send_err(
+        req, HTTPD_400_BAD_REQUEST,
+        "{\"status\":\"fail\",\"message\":\"unsuported input\"}");
+    return ESP_FAIL;
+  }
+
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_status(req, "200 OK");
+  const char *success_resp = "{\"status\":\"success\",\"message\":\"send\"}";
+  httpd_resp_send(req, success_resp, strlen(success_resp));
 
   return ESP_OK;
 }
