@@ -29,6 +29,8 @@ static const char *TAG = "kauart";
 static QueueHandle_t uart0_queue = NULL;
 static SemaphoreHandle_t uart_semphr = NULL;
 static radio_data_t radio = {0};
+static char buffer_rx[BUF_SIZE] = {0};
+static size_t buffer_rx_len = 0;
 
 static void enRadio() {
   gpio_set_level(en_pin, 1);
@@ -165,6 +167,13 @@ void k_uart_rx_task(void *pvParameters) {
             free(ptr_radio);
           }
         }
+      } else {
+        if (xSemaphoreTake(uart_semphr, pdMS_TO_TICKS(200)) == pdTRUE) {
+          buffer_rx_len =
+              (uartEvent.size > BUF_SIZE) ? BUF_SIZE : uartEvent.size;
+          memcpy(buffer_rx, dtmp, buffer_rx_len);
+          xSemaphoreGive(uart_semphr);
+        }
       }
 
       free(dtmp);
@@ -217,6 +226,49 @@ esp_err_t k_uart_init(void) {
   return ESP_OK;
 }
 
+static char *hexdump_to_string(const void *addr, size_t len) {
+  const unsigned char *pc = (const unsigned char *)addr;
+  size_t i, j;
+  size_t num_rows = (len + 15) / 16;
+  size_t buffer_size = (num_rows * 79) + 1;
+
+  char *buffer = (char *)malloc(buffer_size);
+
+  if (!buffer)
+    return NULL;
+
+  char *out = buffer;
+
+  for (i = 0; i < len; i += 16) {
+    out += sprintf(out, "%08zx  ", i);
+
+    for (j = 0; j < 16; j++) {
+      if (i + j < len) {
+        out += sprintf(out, "%02x ", pc[i + j]);
+      } else {
+        out += sprintf(out, "   ");
+      }
+      if (j == 7) {
+        out += sprintf(out, " ");
+      }
+    }
+
+    out += sprintf(out, " |");
+
+    for (j = 0; j < 16; j++) {
+      if (i + j < len) {
+        out += sprintf(out, "%c", isprint(pc[i + j]) ? pc[i + j] : '.');
+      } else {
+        out += sprintf(out, " "); // Pad with spaces if data ends early
+      }
+    }
+
+    out += sprintf(out, "|\n");
+  }
+
+  return buffer;
+}
+
 esp_err_t lora_get_handler(httpd_req_t *req) {
   cJSON *root = cJSON_CreateObject();
 
@@ -252,12 +304,34 @@ esp_err_t lora_get_handler(httpd_req_t *req) {
     }
   }
 
-  const char *json_str = RF1276_toJson(&mRadio);
+  char *json_str = RF1276_toJson(&mRadio);
 
   if (json_str == NULL) {
     httpd_resp_send_500(req);
     return ESP_FAIL;
   }
+
+  cJSON *json = cJSON_Parse(json_str);
+
+  free(json_str);
+  json_str = NULL;
+
+  cJSON *buffer_json = cJSON_CreateObject();
+  char *buffer_content = NULL;
+  size_t buffer_json_len = 0;
+
+  if (xSemaphoreTake(uart_semphr, pdMS_TO_TICKS(200)) == pdTRUE) {
+    buffer_content = hexdump_to_string(buffer_rx, buffer_rx_len);
+    buffer_json_len = buffer_rx_len;
+    xSemaphoreGive(uart_semphr);
+  }
+
+  cJSON_AddStringToObject(buffer_json, "rx buffer", buffer_content);
+  cJSON_AddNumberToObject(buffer_json, "Lenght", buffer_json_len);
+  cJSON_AddItemToObject(json, "Buffer Rx", buffer_json);
+  free(buffer_content);
+  json_str = cJSON_Print(json);
+  cJSON_Delete(json);
 
   httpd_resp_set_type(req, "application/json");
   httpd_resp_sendstr(req, json_str);
