@@ -110,7 +110,7 @@ void k_uart_rx_task(void *pvParameters) {
     }
 
     if (dtmp != NULL) {
-      ESP_LOG_BUFFER_HEXDUMP(TAG, dtmp, uartEvent.size, ESP_LOG_INFO);
+      // ESP_LOG_BUFFER_HEXDUMP(TAG, dtmp, uartEvent.size, ESP_LOG_INFO);
 
       if (strstr((char *)dtmp, "YL_800IL") != NULL) {
         int baud = 0;
@@ -576,7 +576,7 @@ esp_err_t lora_rxtx_get_handler(httpd_req_t *req) {
   httpd_resp_set_type(req, "text/plain");
   httpd_resp_set_status(req, "200 OK");
 
-  esp_err_t err = httpd_resp_send(req, buffer_rx_str, buffer_rx_str_len);
+  esp_err_t err = httpd_resp_send(req, buffer_rx_str, strlen(buffer_rx_str));
 
   free(buffer_rx_str);
 
