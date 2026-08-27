@@ -93,9 +93,6 @@ void k_uart_rx_task(void *pvParameters) {
   uart_event_t uartEvent;
   uint8_t *dtmp = NULL;
 
-  int data = 0;
-  int stop = 0;
-
   (void)pvParameters;
 
   vTaskDelay(pdMS_TO_TICKS(500));
@@ -111,11 +108,13 @@ void k_uart_rx_task(void *pvParameters) {
     }
 
     if (dtmp != NULL) {
-      ESP_LOG_BUFFER_HEXDUMP(TAG, dtmp, uartEvent.size, ESP_LOG_INFO);
+      // ESP_LOG_BUFFER_HEXDUMP(TAG, dtmp, uartEvent.size, ESP_LOG_INFO);
 
       if (strstr((char *)dtmp, "YL_800IL") != NULL) {
         int baud = 0;
         char parity = '0';
+        int data = 0;
+        int stop = 0;
 
         sscanf((char *)dtmp, "%d %c %d %d YL_800IL", &baud, &parity, &data,
                &stop);
@@ -141,11 +140,20 @@ void k_uart_rx_task(void *pvParameters) {
         }
       } else if (strstr((char *)dtmp, "\xaf\xaf\x00\x00\xaf") != NULL) {
         if (uartEvent.size == RF1276_COMMAND_SIZE) {
-          radio_data_t *ptr_radio =
-              RF1276_parse_radio(&dtmp[8], RF1276_DATA_SIZE);
+          uart_word_length_t word_length = UART_DATA_BITS_MAX;
+          uart_stop_bits_t stop_bits = UART_STOP_BITS_MAX;
+          esp_err_t err = ESP_OK;
+          radio_data_t *ptr_radio = NULL;
 
-          ptr_radio->serial.length = data;
-          ptr_radio->serial.stop = stop;
+          ptr_radio = RF1276_parse_radio(&dtmp[8], RF1276_DATA_SIZE);
+
+          err = uart_get_word_length(uart_port, &word_length);
+          err |= uart_get_stop_bits(uart_port, &stop_bits);
+
+          if (err == ESP_OK) {
+            ptr_radio->serial.length = word_length + 5;
+            ptr_radio->serial.stop = stop_bits;
+          }
 
           if (ptr_radio != NULL) {
             if (xSemaphoreTake(uart_semphr, pdMS_TO_TICKS(200)) == pdTRUE) {
@@ -153,13 +161,8 @@ void k_uart_rx_task(void *pvParameters) {
               xSemaphoreGive(uart_semphr);
             }
 
-            char *parse = RF1276_toJson(ptr_radio);
+            ESP_LOGI(TAG, "Radio detectado");
             free(ptr_radio);
-
-            if (parse != NULL) {
-              ESP_LOGI(TAG, "%s", parse);
-              free(parse);
-            }
           }
         }
       }
