@@ -275,6 +275,232 @@ esp_err_t lora_info_get_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
+static baud_rate_t parse_baud_rate(const char *str) {
+  if (strcmp(str, "1200") == 0)
+    return B1200BPS;
+  if (strcmp(str, "2400") == 0)
+    return B2400BPS;
+  if (strcmp(str, "4800") == 0)
+    return B4800BPS;
+  if (strcmp(str, "9600") == 0)
+    return B9600BPS;
+  if (strcmp(str, "19200") == 0)
+    return B19200BPS;
+  if (strcmp(str, "38400") == 0)
+    return B38400BPS;
+  if (strcmp(str, "57600") == 0)
+    return B57600BPS;
+  if (strcmp(str, "115200") == 0)
+    return B115200PS;
+  return BINVPS;
+}
+
+static parity_t parse_parity(const char *str) {
+  if (strcasecmp(str, "Even") == 0)
+    return EVEN_PARITY;
+  if (strcasecmp(str, "Odd") == 0)
+    return ODD_PARITY;
+  return NO_PARITY;
+}
+
+static rf_factor_t parse_rf_factor(const char *str) {
+  int val = atoi(str);
+  if (val == 256)
+    return RF_256;
+  if (val == 512)
+    return RF_512;
+  if (val == 1024)
+    return RF_1024;
+  if (val == 2048)
+    return RF_2048;
+  if (val == 4096)
+    return RF_4096;
+  return RF_128; // Default fallback
+}
+
+static radio_mode_t parse_radio_mode(const char *str) {
+  if (strcasecmp(str, "LowPower") == 0 || strcasecmp(str, "Low Power") == 0)
+    return MODE_LOW_POWER;
+  if (strcasecmp(str, "Sleep") == 0)
+    return MODE_SLEEP;
+  return MODE_STANDARD;
+}
+
+static rf_bw_t parse_rf_bw(const char *str) {
+  if (strcasecmp(str, "62.5K") == 0)
+    return BW_62_5K;
+  if (strcasecmp(str, "125K") == 0)
+    return BW_125K;
+  if (strcasecmp(str, "250K") == 0)
+    return BW_250K;
+  return BW_500K; // Default fallback
+}
+
+static rf_power_t parse_rf_power(const char *str) {
+  if (strcasecmp(str, "4dBm") == 0)
+    return P_4DBM;
+  if (strcasecmp(str, "7dBm") == 0)
+    return P_7DBM;
+  if (strcasecmp(str, "10dBm") == 0)
+    return P_10DBM;
+  if (strcasecmp(str, "13dBm") == 0)
+    return P_13DBM;
+  if (strcasecmp(str, "14dBm") == 0)
+    return P_14DBM;
+  if (strcasecmp(str, "17dBm") == 0)
+    return P_17DBM;
+  return P_20DBM; // Default fallback
+}
+
+esp_err_t lora_info_post_handler(httpd_req_t *req) {
+  if (req->content_len <= 0) {
+    ESP_LOGE(TAG, "Content-Length is missing or zero");
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing JSON payload");
+    return ESP_FAIL;
+  }
+
+  char *json_buf = malloc(req->content_len + 1);
+
+  if (!json_buf) {
+    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+                        "Heap allocation failed");
+    return ESP_FAIL;
+  }
+
+  int received = httpd_req_recv(req, json_buf, req->content_len);
+
+  if (received <= 0) {
+    free(json_buf);
+
+    if (received == HTTPD_SOCK_ERR_TIMEOUT) {
+      httpd_resp_send_err(req, HTTPD_408_REQ_TIMEOUT, "Socket timeout");
+      return ESP_ERR_TIMEOUT;
+    }
+
+    return ESP_FAIL;
+  }
+
+  json_buf[received] = '\0';
+  cJSON *root = cJSON_Parse(json_buf);
+  free(json_buf);
+
+  if (!root) {
+    ESP_LOGE(TAG, "JSON Syntax Error");
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                        "Invalid JSON formatting syntax");
+    return ESP_FAIL;
+  }
+
+  radio_data_t updated_cfg;
+  bool updated = false;
+
+  cJSON *freq = cJSON_GetObjectItemCaseSensitive(root, "frequencia_mhz");
+
+  if (cJSON_IsNumber(freq)) {
+    updated_cfg.frequency = (float)freq->valuedouble;
+    updated = true;
+  }
+
+  cJSON *node = cJSON_GetObjectItemCaseSensitive(root, "node_id");
+
+  if (cJSON_IsNumber(node)) {
+    updated_cfg.id = (uint16_t)node->valueint;
+    updated = true;
+  }
+
+  cJSON *net = cJSON_GetObjectItemCaseSensitive(root, "net_id");
+
+  if (cJSON_IsNumber(net)) {
+    updated_cfg.net_id = (uint8_t)net->valueint;
+    updated = true;
+  }
+
+  cJSON *factor = cJSON_GetObjectItemCaseSensitive(root, "rf_factor");
+
+  if (cJSON_IsString(factor) && factor->valuestring) {
+    updated_cfg.rf_factor = parse_rf_factor(factor->valuestring);
+    updated = true;
+  }
+
+  cJSON *mode = cJSON_GetObjectItemCaseSensitive(root, "rf_mode");
+
+  if (cJSON_IsString(mode) && mode->valuestring) {
+    updated_cfg.mode = parse_radio_mode(mode->valuestring);
+    updated = true;
+  }
+
+  cJSON *bw = cJSON_GetObjectItemCaseSensitive(root, "rf_bw_khz");
+
+  if (cJSON_IsString(bw) && bw->valuestring) {
+    updated_cfg.rf_bw = parse_rf_bw(bw->valuestring);
+    updated = true;
+  }
+
+  cJSON *power = cJSON_GetObjectItemCaseSensitive(root, "power");
+
+  if (cJSON_IsString(power) && power->valuestring) {
+    updated_cfg.rf_power = parse_rf_power(power->valuestring);
+    updated = true;
+  }
+
+  cJSON *serial_obj = cJSON_GetObjectItemCaseSensitive(root, "Serial");
+
+  if (cJSON_IsObject(serial_obj)) {
+    cJSON *baud = cJSON_GetObjectItemCaseSensitive(serial_obj, "Baud Rate");
+
+    if (cJSON_IsString(baud) && baud->valuestring) {
+      updated_cfg.serial.baudrate = parse_baud_rate(baud->valuestring);
+      updated = true;
+    }
+
+    cJSON *length = cJSON_GetObjectItemCaseSensitive(serial_obj, "Length");
+
+    if (cJSON_IsNumber(length)) {
+      updated_cfg.serial.length = length->valueint;
+      updated = true;
+    }
+
+    cJSON *stop = cJSON_GetObjectItemCaseSensitive(serial_obj, "Stop");
+
+    if (cJSON_IsNumber(stop)) {
+      updated_cfg.serial.stop = stop->valueint;
+      updated = true;
+    }
+
+    cJSON *parity = cJSON_GetObjectItemCaseSensitive(serial_obj, "Parity");
+
+    if (cJSON_IsString(parity) && parity->valuestring) {
+      updated_cfg.serial.parity = parse_parity(parity->valuestring);
+      updated = true;
+    }
+  }
+
+  cJSON_Delete(root);
+
+  if (updated) {
+    if (xSemaphoreTake(uart_semphr, pdMS_TO_TICKS(200)) == pdTRUE) {
+      memcpy(&radio, &updated_cfg, sizeof(radio_data_t));
+      xSemaphoreGive(uart_semphr);
+    }
+
+    char *novo_radio = RF1276_toJson(&updated_cfg);
+    ESP_LOGI(TAG, "%s", novo_radio);
+    free(novo_radio);
+  } else {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+                        "Payload contained zero valid fields");
+    return ESP_FAIL;
+  }
+
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_status(req, "200 OK");
+  const char *success_resp =
+      "{\"status\":\"success\",\"message\":\"Enums updated\"}";
+  httpd_resp_send(req, success_resp, strlen(success_resp));
+
+  return ESP_OK;
+}
+
 static char *hexdump_to_string(const void *addr, size_t len) {
   const unsigned char *pc = (const unsigned char *)addr;
   size_t i, j;
